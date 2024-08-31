@@ -1,6 +1,7 @@
 import socket
 import logging
 import signal
+from .utils import store_bets, Bet
 
 class Person:
     def __init__(self, nombre, apellido, dni, nacimiento, numero):
@@ -69,6 +70,8 @@ class Server:
             person = Person.from_socket(client_sock)
 
             logging.info(f'action: apuesta_almacenada | result: success | dni: {person.dni} | numero: {person.numero}')
+
+            store_bets([Bet(0, person.nombre, person.apellido, person.dni, person.nacimiento, person.numero)])
 
             # TODO: Modify the send to avoid short-writes
             client_sock.send("{}\n".format("OK").encode('utf-8'))

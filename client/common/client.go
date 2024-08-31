@@ -128,6 +128,7 @@ func (c *Client) StartClientLoop() {
 			fmt.Println("error sending person", err)
 			return
 		}
+		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s", persona.dni, persona.numero)
 
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
 		c.conn.Close()
