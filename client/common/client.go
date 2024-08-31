@@ -2,6 +2,7 @@ package common
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
@@ -64,6 +65,47 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
+type Person struct {
+	nombre     string // max length 23
+	apellido   string // max length 23
+	dni        string // max length 8
+	nacimiento string //
+	numero     uint64
+}
+
+const MAX_NAME_LENGTH = 23
+const MAX_SURNAME_LENGTH = 10
+const MAX_SIZE_PERSON = 1 + MAX_NAME_LENGTH + 1 + MAX_SURNAME_LENGTH + 8 + 10 + 8
+
+func (c *Client) sendPerson(persona Person) error {
+	buf := make([]byte, 0, MAX_SIZE_PERSON)
+
+	nameLength := len(persona.nombre)
+	if nameLength > MAX_NAME_LENGTH {
+		return fmt.Errorf("name too long")
+	}
+
+	buf = append(buf, byte(nameLength))
+	buf = append(buf, []byte(persona.nombre)...)
+
+	surnameLength := len(persona.apellido)
+	if surnameLength > 10 {
+		return fmt.Errorf("surname too long")
+	}
+	buf = append(buf, byte(surnameLength))
+	buf = append(buf, []byte(persona.apellido)...)
+
+	buf = append(buf, []byte(persona.dni)...)
+	buf = append(buf, []byte(persona.nacimiento)...)
+
+	number := make([]byte, 8)
+	binary.BigEndian.PutUint64(number, persona.numero)
+	buf = append(buf, number...)
+
+	_, err := c.conn.Write(buf)
+	return err
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
 	// There is an autoincremental msgID to identify every message sent
@@ -73,12 +115,20 @@ func (c *Client) StartClientLoop() {
 		c.createClientSocket()
 
 		// TODO: Modify the send to avoid short-write
-		fmt.Fprintf(
-			c.conn,
-			"[CLIENT %v] Message N°%v\n",
-			c.config.ID,
-			msgID,
-		)
+		persona := Person {
+			nombre:     "Santiago Lionel",
+			apellido:   "Lorca",
+			dni:        "30904465",
+			nacimiento: "1999-03-17",
+			numero:     7574,
+		}
+
+		err := c.sendPerson(persona)
+		if err != nil {
+			fmt.Println("error sending person", err)
+			return
+		}
+
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
 		c.conn.Close()
 

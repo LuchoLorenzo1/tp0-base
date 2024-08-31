@@ -2,6 +2,26 @@ import socket
 import logging
 import signal
 
+class Person:
+    def __init__(self, nombre, apellido, dni, nacimiento, numero):
+        self.nombre = nombre
+        self.apellido = apellido
+        self.dni = dni
+        self.nacimiento = nacimiento
+        self.numero = numero
+
+    def from_socket(sock: socket.socket):
+        nombre_len = int.from_bytes(sock.recv(1), byteorder='big')
+        nombre = sock.recv(nombre_len).decode('utf-8')
+
+        apellido_len = int.from_bytes(sock.recv(1), byteorder='big')
+        apellido = sock.recv(apellido_len).decode('utf-8')
+
+        dni = sock.recv(8).decode('utf-8')
+        nacimiento = sock.recv(10).decode('utf-8')
+        numero = int.from_bytes(sock.recv(8), byteorder='big')
+
+        return Person(nombre, apellido, dni, nacimiento, numero)
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -46,11 +66,12 @@ class Server:
         """
         try:
             # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
+            person = Person.from_socket(client_sock)
+
+            logging.info(f'action: apuesta_almacenada | result: success | dni: {person.dni} | numero: {person.numero}')
+
             # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
+            client_sock.send("{}\n".format("OK").encode('utf-8'))
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:
