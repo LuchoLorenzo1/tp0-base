@@ -39,11 +39,11 @@ func NewClient(config ClientConfig) *Client {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGTERM)
 	go func() {
-		<-sigc;
+		<-sigc
 		if client.conn != nil {
-			client.conn.Close();
+			client.conn.Close()
 		}
-		os.Exit(0);
+		os.Exit(0)
 	}()
 
 	return client
@@ -115,20 +115,33 @@ func (c *Client) StartClientLoop() {
 		c.createClientSocket()
 
 		// TODO: Modify the send to avoid short-write
-		persona := Person {
+		persona1 := Person{
 			nombre:     "Santiago Lionel",
 			apellido:   "Lorca",
 			dni:        "30904465",
 			nacimiento: "1999-03-17",
 			numero:     7574,
 		}
-
-		err := c.sendPerson(persona)
-		if err != nil {
-			fmt.Println("error sending person", err)
-			return
+		persona2 := Person{
+			nombre:     "Juan Zeo",
+			apellido:   "Messi",
+			dni:        "33459234",
+			nacimiento: "2004-03-17",
+			numero:     7574,
 		}
-		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s", persona.dni, persona.numero)
+		chunkPersonas := []Person{persona1, persona2}
+
+		numberOfBatchesBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(numberOfBatchesBytes, 2)
+		_, err := c.conn.Write(numberOfBatchesBytes)
+
+		for _, persona := range chunkPersonas {
+			err := c.sendPerson(persona)
+			if err != nil {
+				fmt.Println("error sending person", err)
+				return
+			}
+		}
 
 		msg, err := bufio.NewReader(c.conn).ReadString('\n')
 		c.conn.Close()

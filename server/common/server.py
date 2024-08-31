@@ -3,15 +3,11 @@ import logging
 import signal
 from .utils import store_bets, Bet
 
-class Person:
-    def __init__(self, nombre, apellido, dni, nacimiento, numero):
-        self.nombre = nombre
-        self.apellido = apellido
-        self.dni = dni
-        self.nacimiento = nacimiento
-        self.numero = numero
+class LotteryProtocol:
+    def __init__(self):
+        self.bets = []
 
-    def from_socket(sock: socket.socket):
+    def __parse_bet(sock: socket.socket) -> Bet:
         nombre_len = int.from_bytes(sock.recv(1), byteorder='big')
         nombre = sock.recv(nombre_len).decode('utf-8')
 
@@ -22,7 +18,19 @@ class Person:
         nacimiento = sock.recv(10).decode('utf-8')
         numero = int.from_bytes(sock.recv(8), byteorder='big')
 
-        return Person(nombre, apellido, dni, nacimiento, numero)
+        return Bet("5", nombre, apellido, dni, nacimiento, str(numero))
+
+
+    def read_bets(sock: socket.socket) -> list[Bet]:
+        try:
+            chunk_len = int.from_bytes(sock.recv(4), byteorder='big')
+            bets = []
+            for _ in range(chunk_len):
+                bets.append(LotteryProtocol.__parse_bet(sock))
+            return bets
+        except:
+            return None
+
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -67,11 +75,14 @@ class Server:
         """
         try:
             # TODO: Modify the receive to avoid short-reads
-            person = Person.from_socket(client_sock)
+            bet_chunks = LotteryProtocol.read_bets(client_sock)
 
-            logging.info(f'action: apuesta_almacenada | result: success | dni: {person.dni} | numero: {person.numero}')
+            if bet_chunks is None:
+                logging.error(f"action: apuesta_recibida | result: fail | error: {e}")
+                return
 
-            store_bets([Bet(0, person.nombre, person.apellido, person.dni, person.nacimiento, person.numero)])
+            store_bets(bet_chunks)
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bet_chunks)}")
 
             # TODO: Modify the send to avoid short-writes
             client_sock.send("{}\n".format("OK").encode('utf-8'))
