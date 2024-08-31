@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -31,6 +34,17 @@ func NewClient(config ClientConfig) *Client {
 	client := &Client{
 		config: config,
 	}
+
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc, syscall.SIGTERM)
+	go func() {
+		<-sigc;
+		if client.conn != nil {
+			client.conn.Close();
+		}
+		os.Exit(0);
+	}()
+
 	return client
 }
 
