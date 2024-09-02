@@ -4,10 +4,7 @@ import signal
 from .utils import store_bets, Bet
 
 class LotteryProtocol:
-    def __init__(self):
-        self.bets = []
-
-    def __parse_bet(sock: socket.socket) -> Bet:
+    def __parse_bet(sock: socket.socket, agencia: int) -> Bet:
         nombre_len = int.from_bytes(sock.recv(1), byteorder='big')
         nombre = sock.recv(nombre_len).decode('utf-8')
 
@@ -18,17 +15,20 @@ class LotteryProtocol:
         nacimiento = sock.recv(10).decode('utf-8')
         numero = int.from_bytes(sock.recv(8), byteorder='big')
 
-        return Bet("5", nombre, apellido, dni, nacimiento, str(numero))
-
+        return Bet(str(agencia), nombre, apellido, dni, nacimiento, str(numero))
 
     def read_bets(sock: socket.socket) -> list[Bet]:
+        agencia = int.from_bytes(sock.recv(4), byteorder='big')
+        print(f"Agencia: {agencia}")
+
         try:
             chunk_len = int.from_bytes(sock.recv(4), byteorder='big')
             bets = []
             for _ in range(chunk_len):
-                bets.append(LotteryProtocol.__parse_bet(sock))
+                bets.append(LotteryProtocol.__parse_bet(sock, agencia))
             return bets
-        except:
+        except Exception as e:
+            logging.error(f"action: apuesta_recibida | result: fail | error: {e}")
             return None
 
 
@@ -78,7 +78,7 @@ class Server:
             bet_chunks = LotteryProtocol.read_bets(client_sock)
 
             if bet_chunks is None:
-                logging.error(f"action: apuesta_recibida | result: fail | error: {e}")
+                logging.error(f"action: apuesta_recibida | result: fail")
                 return
 
             store_bets(bet_chunks)

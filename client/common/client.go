@@ -3,10 +3,12 @@ package common
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/csv"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -17,10 +19,11 @@ var log = logging.MustGetLogger("log")
 
 // ClientConfig Configuration used by the client
 type ClientConfig struct {
-	ID            string
-	ServerAddress string
-	LoopAmount    int
-	LoopPeriod    time.Duration
+	ID             string
+	ServerAddress  string
+	LoopAmount     int
+	LoopPeriod     time.Duration
+	BatchMaxAmount int
 }
 
 // Client Entity that encapsulates how
@@ -69,8 +72,24 @@ type Person struct {
 	nombre     string // max length 23
 	apellido   string // max length 23
 	dni        string // max length 8
-	nacimiento string //
-	numero     uint64
+	nacimiento string // max length 10
+	numero     uint64 // 8 bytes
+}
+
+func person_from_string_array(records []string) (*Person, error) {
+	persona1 := &Person{
+		nombre:     records[0],
+		apellido:   records[1],
+		dni:        records[2],
+		nacimiento: records[3],
+	}
+	numero, err := strconv.Atoi(records[4])
+	if err != nil {
+		return nil, err
+	}
+	persona1.numero = uint64(numero)
+
+	return persona1, nil
 }
 
 const MAX_NAME_LENGTH = 23
@@ -106,37 +125,67 @@ func (c *Client) sendPerson(persona Person) error {
 	return err
 }
 
+func readCsvFile(filePath string) [][]string {
+	f, err := os.Open(filePath)
+	if err != nil {
+		log.Fatal("Unable to read input file "+filePath, err)
+	}
+	defer f.Close()
+
+	csvReader := csv.NewReader(f)
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		log.Fatal("Unable to parse file as CSV for "+filePath, err)
+	}
+
+	return records
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
-	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
-		// Create the connection the server in every loop iteration. Send an
+
+	agencia := uint32(1);
+	records := readCsvFile("/.data/agency-1.csv")
+	i := 0
+	log.Info("len(records) ", len(records))
+
+	if MAX_SIZE_PERSON * c.config.BatchMaxAmount > 8000 {
+		c.config.BatchMaxAmount = 8000 / MAX_SIZE_PERSON
+	}
+	println("c.config.BatchMaxAmount ", c.config.BatchMaxAmount)
+
+	for i < len(records) {
 		c.createClientSocket()
 
-		// TODO: Modify the send to avoid short-write
-		persona1 := Person{
-			nombre:     "Santiago Lionel",
-			apellido:   "Lorca",
-			dni:        "30904465",
-			nacimiento: "1999-03-17",
-			numero:     7574,
-		}
-		persona2 := Person{
-			nombre:     "Juan Zeo",
-			apellido:   "Messi",
-			dni:        "33459234",
-			nacimiento: "2004-03-17",
-			numero:     7574,
-		}
-		chunkPersonas := []Person{persona1, persona2}
-
 		numberOfBatchesBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(numberOfBatchesBytes, 2)
+		binary.BigEndian.PutUint32(numberOfBatchesBytes, agencia)
 		_, err := c.conn.Write(numberOfBatchesBytes)
+		if err != nil {
+			fmt.Println("error sending agency number", err)
+			return
+		}
+		log.Info("sent agency number")
+
+		chunkPersonas := make([]*Person, 0, c.config.BatchMaxAmount)
+
+		for len(chunkPersonas) < c.config.BatchMaxAmount && i < len(records) {
+			persona, err := person_from_string_array(records[i])
+			if err != nil {
+				fmt.Println("error creating person", err)
+				return
+			}
+			chunkPersonas = append(chunkPersonas, persona)
+			i++
+		}
+
+		numberOfBatchesBytes = make([]byte, 4)
+		binary.BigEndian.PutUint32(numberOfBatchesBytes, uint32(len(chunkPersonas)))
+		_, err = c.conn.Write(numberOfBatchesBytes)
 
 		for _, persona := range chunkPersonas {
-			err := c.sendPerson(persona)
+			err := c.sendPerson(*persona)
 			if err != nil {
 				fmt.Println("error sending person", err)
 				return
@@ -163,5 +212,7 @@ func (c *Client) StartClientLoop() {
 		time.Sleep(c.config.LoopPeriod)
 
 	}
+
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+	log.Infof("i: ", i)
 }

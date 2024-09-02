@@ -47,6 +47,7 @@ do
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/:/.data/
   "
 
   echo "$client" >> $1
