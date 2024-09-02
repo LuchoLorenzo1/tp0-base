@@ -147,7 +147,7 @@ func (c *Client) StartClientLoop() {
 	// Messages if the message amount threshold has not been surpassed
 
 	agencia := uint32(1);
-	records := readCsvFile("/.data/agency-1.csv")
+	records := readCsvFile("/agency.csv")
 	i := 0
 	log.Info("len(records) ", len(records))
 

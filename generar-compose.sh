@@ -33,6 +33,7 @@ echo "$file" > $1
 
 for i in $(seq 1 $2)
 do
+  x=$(( (i-1) % 5 + 1 ))
   client="
   client$i:
     container_name: client$i
@@ -47,9 +48,8 @@ do
       - server
     volumes:
       - ./client/config.yaml:/config.yaml
-      - ./.data/:/.data/
-  "
-
+      - ./.data/agency-${x}.csv:/agency.csv
+	  "
   echo "$client" >> $1
 done
 
