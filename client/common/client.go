@@ -2,12 +2,10 @@ package common
 
 import (
 	"encoding/binary"
-	"encoding/csv"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -69,87 +67,6 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
-type Person struct {
-	nombre     string // max length 23
-	apellido   string // max length 23
-	dni        string // max length 8
-	nacimiento string // max length 10
-	numero     uint64 // 8 bytes
-}
-
-func person_from_string_array(records []string) (*Person, error) {
-	persona1 := &Person{
-		nombre:     records[0],
-		apellido:   records[1],
-		dni:        records[2],
-		nacimiento: records[3],
-	}
-	numero, err := strconv.Atoi(records[4])
-	if err != nil {
-		return nil, err
-	}
-	persona1.numero = uint64(numero)
-
-	return persona1, nil
-}
-
-const MAX_NAME_LENGTH = 23
-const MAX_SURNAME_LENGTH = 10
-const MAX_SIZE_PERSON = 1 + MAX_NAME_LENGTH + 1 + MAX_SURNAME_LENGTH + 8 + 10 + 8
-
-func (c *Client) sendPerson(persona Person) error {
-	buf := make([]byte, 0, MAX_SIZE_PERSON)
-
-	nameLength := len(persona.nombre)
-	if nameLength > MAX_NAME_LENGTH {
-		return fmt.Errorf("name too long")
-	}
-
-	buf = append(buf, byte(nameLength))
-	buf = append(buf, []byte(persona.nombre)...)
-
-	surnameLength := len(persona.apellido)
-	if surnameLength > 10 {
-		return fmt.Errorf("surname too long")
-	}
-	buf = append(buf, byte(surnameLength))
-	buf = append(buf, []byte(persona.apellido)...)
-
-	buf = append(buf, []byte(persona.dni)...)
-	buf = append(buf, []byte(persona.nacimiento)...)
-
-	number := make([]byte, 8)
-	binary.BigEndian.PutUint64(number, persona.numero)
-	buf = append(buf, number...)
-
-	totalWritten := 0
-	for totalWritten < len(buf) {
-		size, err := c.conn.Write(buf[totalWritten:])
-		if err != nil {
-			return fmt.Errorf("failed to write data: %w. Trying again.", err)
-		}
-		totalWritten += size
-	}
-
-	return nil
-}
-
-func readCsvFile(filePath string) [][]string {
-	f, err := os.Open(filePath)
-	if err != nil {
-		log.Fatal("Unable to read input file "+filePath, err)
-	}
-	defer f.Close()
-
-	csvReader := csv.NewReader(f)
-	records, err := csvReader.ReadAll()
-	if err != nil {
-		log.Fatal("Unable to parse file as CSV for "+filePath, err)
-	}
-
-	return records
-}
-
 func (c *Client) StartClientLoop() {
 	agencia := uint32(c.config.AgencyNumber)
 	records := readCsvFile(c.config.AgencyFile)
@@ -169,8 +86,6 @@ func (c *Client) StartClientLoop() {
 			fmt.Println("error sending agency number", err)
 			return
 		}
-		log.Info("sent agency number")
-
 		chunkPersonas := make([]*Person, 0, c.config.BatchMaxAmount)
 
 		for len(chunkPersonas) < c.config.BatchMaxAmount && i < len(records) {
@@ -183,20 +98,24 @@ func (c *Client) StartClientLoop() {
 			i++
 		}
 
-		numberOfBatchesBytes = make([]byte, 4)
-		binary.BigEndian.PutUint32(numberOfBatchesBytes, uint32(len(chunkPersonas)))
-		_, err = c.conn.Write(numberOfBatchesBytes)
+		buffer := make([]byte, 4)
+		binary.BigEndian.PutUint32(buffer, uint32(len(chunkPersonas)))
 
 		for _, persona := range chunkPersonas {
-			err := c.sendPerson(*persona)
+			buffer, err = serializePerson(buffer, *persona) 
 			if err != nil {
-				fmt.Println("error sending person", err)
+				fmt.Errorf("error sending person", err)
 				return
 			}
 		}
 
+		err = send_all(c.conn, buffer)
+		if err != nil {
+			fmt.Errorf("error sending message", err)
+			return
+		}
 
-		buffer := make([]byte, 2)
+		buffer = make([]byte, 2)
 		totalRead := 0
 		for totalRead < len(buffer) {
 			size, err := c.conn.Read(buffer)
@@ -208,11 +127,9 @@ func (c *Client) StartClientLoop() {
 
 		response := string(buffer)
 		if response != "OK" {
-			fmt.Println("error sending person")
+			fmt.Errorf("error sending person")
 			return
 		}
-
-		log.Info("RESPUESTA", response)
 
 		if err != nil {
 			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
@@ -231,5 +148,4 @@ func (c *Client) StartClientLoop() {
 	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
-	log.Infof("i: ", i)
 }
