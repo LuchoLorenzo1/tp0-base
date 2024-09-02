@@ -41,6 +41,8 @@ do
     entrypoint: /client
     environment:
       - CLI_ID=$i
+      - AGENCY_FILE=/agency.csv
+      - AGENCY_NUMBER=$x
       - CLI_LOG_LEVEL=DEBUG
     networks:
       - testing_net
@@ -49,7 +51,7 @@ do
     volumes:
       - ./client/config.yaml:/config.yaml
       - ./.data/agency-${x}.csv:/agency.csv
-	  "
+"
   echo "$client" >> $1
 done
 

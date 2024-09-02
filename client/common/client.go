@@ -1,7 +1,6 @@
 package common
 
 import (
-	"bufio"
 	"encoding/binary"
 	"encoding/csv"
 	"fmt"
@@ -24,6 +23,8 @@ type ClientConfig struct {
 	LoopAmount     int
 	LoopPeriod     time.Duration
 	BatchMaxAmount int
+	AgencyNumber   int
+	AgencyFile     string
 }
 
 // Client Entity that encapsulates how
@@ -121,8 +122,16 @@ func (c *Client) sendPerson(persona Person) error {
 	binary.BigEndian.PutUint64(number, persona.numero)
 	buf = append(buf, number...)
 
-	_, err := c.conn.Write(buf)
-	return err
+	totalWritten := 0
+	for totalWritten < len(buf) {
+		size, err := c.conn.Write(buf[totalWritten:])
+		if err != nil {
+			return fmt.Errorf("failed to write data: %w. Trying again.", err)
+		}
+		totalWritten += size
+	}
+
+	return nil
 }
 
 func readCsvFile(filePath string) [][]string {
@@ -141,20 +150,14 @@ func readCsvFile(filePath string) [][]string {
 	return records
 }
 
-// StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
-	// There is an autoincremental msgID to identify every message sent
-	// Messages if the message amount threshold has not been surpassed
-
-	agencia := uint32(1);
-	records := readCsvFile("/agency.csv")
+	agencia := uint32(c.config.AgencyNumber)
+	records := readCsvFile(c.config.AgencyFile)
 	i := 0
-	log.Info("len(records) ", len(records))
 
-	if MAX_SIZE_PERSON * c.config.BatchMaxAmount > 8000 {
+	if MAX_SIZE_PERSON*c.config.BatchMaxAmount > 8000 {
 		c.config.BatchMaxAmount = 8000 / MAX_SIZE_PERSON
 	}
-	println("c.config.BatchMaxAmount ", c.config.BatchMaxAmount)
 
 	for i < len(records) {
 		c.createClientSocket()
@@ -192,8 +195,24 @@ func (c *Client) StartClientLoop() {
 			}
 		}
 
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-		c.conn.Close()
+
+		buffer := make([]byte, 2)
+		totalRead := 0
+		for totalRead < len(buffer) {
+			size, err := c.conn.Read(buffer)
+			if err != nil {
+				fmt.Errorf("failed to read data: %w. Trying again.", err)
+			}
+			totalRead += size
+		}
+
+		response := string(buffer)
+		if response != "OK" {
+			fmt.Println("error sending person")
+			return
+		}
+
+		log.Info("RESPUESTA", response)
 
 		if err != nil {
 			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
@@ -205,12 +224,10 @@ func (c *Client) StartClientLoop() {
 
 		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
 			c.config.ID,
-			msg,
+			response,
 		)
 
-		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
-
 	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)

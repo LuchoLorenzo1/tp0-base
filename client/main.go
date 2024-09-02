@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,13 +104,24 @@ func main() {
 	// Print program config with debugging purposes
 	PrintConfig(v)
 
+	i := os.Getenv("AGENCY_NUMBER")
+	agencyNumber, err := strconv.Atoi(i)
+	if err != nil {
+		agencyNumber = 1
+	}
+
 	clientConfig := common.ClientConfig{
 		ServerAddress:  v.GetString("server.address"),
 		ID:             v.GetString("id"),
 		LoopAmount:     v.GetInt("loop.amount"),
 		LoopPeriod:     v.GetDuration("loop.period"),
 		BatchMaxAmount: v.GetInt("batch.maxAmount"),
+		AgencyNumber: agencyNumber,
+		AgencyFile: os.Getenv("AGENCY_FILE"),
 	}
+
+	// read from env variable
+	v.BindEnv("batch", "maxAmount")
 
 	client := common.NewClient(clientConfig)
 	client.StartClientLoop()
