@@ -14,7 +14,7 @@ class Server:
         signal.signal(signal.SIGTERM, self.shutdown)
 
     def shutdown(self, *_, **__):
-        self.shutdown = True
+        self.kill = True
 
     def run(self):
         """
@@ -31,6 +31,7 @@ class Server:
             client_sock = self.__accept_new_connection()
             self.__handle_client_connection(client_sock)
 
+        logging.info("action: exit | result: success")
         self._server_socket.close()
 
     def __handle_client_connection(self, client_sock):
