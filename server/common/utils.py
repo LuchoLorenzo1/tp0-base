@@ -1,5 +1,6 @@
 import csv
 import datetime
+import socket
 import time
 
 
@@ -43,9 +44,34 @@ def store_bets(bets: list[Bet]) -> None:
 Loads the information all the bets in the STORAGE_FILEPATH file.
 Not thread-safe/process-safe.
 """
+
 def load_bets() -> list[Bet]:
     with open(STORAGE_FILEPATH, 'r') as file:
         reader = csv.reader(file, quoting=csv.QUOTE_MINIMAL)
         for row in reader:
             yield Bet(row[0], row[1], row[2], row[3], row[4], row[5])
 
+
+def recv_all(sock: socket, length: int) -> bytes:
+    """
+    Recibe todos los bytes de un socket, manejando short reads
+    """
+    data = b''
+    while len(data) < length:
+        packet = sock.recv(length - len(data))
+        if not packet:
+            raise ConnectionError("Socket connection closed or error occurred.")
+        data += packet
+    return data
+
+def send_all(sock: socket, data: bytes) -> int:
+    """
+    Envia todos los bytes a traves de un socket, manejando short writes
+    """
+    total_sent = 0
+    while total_sent < len(data):
+        sent = sock.send(data[total_sent:])
+        if sent == 0:
+            raise ConnectionError("Socket connection closed or error occurred.")
+        total_sent += sent
+    return total_sent

@@ -67,7 +67,38 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
+const BET_CHUNK=1
+const END_BETS=2
+const GET_WINNERS=3
+
+
 func (c *Client) StartClientLoop() {
+	c._StartClientLoop()
+	if c.conn != nil {
+		c.conn.Close()
+	}
+}
+
+func recv_all(sock net.Conn, sz int) []byte {
+	buffer := make([]byte, sz)
+	totalRead := 0
+	for totalRead < len(buffer) {
+		size, err := sock.Read(buffer)
+		if err != nil {
+			fmt.Errorf("failed to read data: %w. Trying again.", err)
+		}
+		totalRead += size
+	}
+	return buffer
+}
+
+func send_agency_number(sock net.Conn, agencia uint32) error {
+	numberOfBatchesBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(numberOfBatchesBytes, agencia)
+	return send_all(sock, numberOfBatchesBytes)
+}
+
+func (c *Client) _StartClientLoop() {
 	agencia := uint32(c.config.AgencyNumber)
 	records := readCsvFile(c.config.AgencyFile)
 	i := 0
@@ -78,16 +109,15 @@ func (c *Client) StartClientLoop() {
 
 	for i < len(records) {
 		c.createClientSocket()
+		send_all(c.conn, []byte{BET_CHUNK})
 
-		numberOfBatchesBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(numberOfBatchesBytes, agencia)
-		_, err := c.conn.Write(numberOfBatchesBytes)
+		err := send_agency_number(c.conn, agencia)
 		if err != nil {
 			fmt.Println("error sending agency number", err)
 			return
 		}
-		chunkPersonas := make([]*Person, 0, c.config.BatchMaxAmount)
 
+		chunkPersonas := make([]*Person, 0, c.config.BatchMaxAmount)
 		for len(chunkPersonas) < c.config.BatchMaxAmount && i < len(records) {
 			persona, err := person_from_string_array(records[i])
 			if err != nil {
@@ -115,15 +145,8 @@ func (c *Client) StartClientLoop() {
 			return
 		}
 
-		buffer = make([]byte, 2)
-		totalRead := 0
-		for totalRead < len(buffer) {
-			size, err := c.conn.Read(buffer)
-			if err != nil {
-				fmt.Errorf("failed to read data: %w. Trying again.", err)
-			}
-			totalRead += size
-		}
+		buffer = recv_all(c.conn, 2)
+		c.conn.Close()
 
 		response := string(buffer)
 		if response != "OK" {
@@ -148,4 +171,44 @@ func (c *Client) StartClientLoop() {
 	}
 
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
+
+	c.createClientSocket()
+	err := send_all(c.conn, []byte{END_BETS})
+	if err != nil {
+		fmt.Errorf("error mode message", err)
+		return
+	}
+	err = send_agency_number(c.conn, agencia)
+	if err != nil {
+		fmt.Println("error sending agency number", err)
+		return
+	}
+
+	buffer := recv_all(c.conn, 2)
+	c.conn.Close()
+	response := string(buffer)
+	if response != "OK" {
+		fmt.Errorf("error sending person")
+		return
+	}
+
+	c.createClientSocket()
+	send_all(c.conn, []byte{GET_WINNERS})
+	if err != nil {
+		fmt.Errorf("error mode message", err)
+		return
+	}
+	err = send_agency_number(c.conn, agencia)
+	if err != nil {
+		fmt.Println("error sending agency number", err)
+		return
+	}
+
+	numOfDocuments := binary.BigEndian.Uint32(recv_all(c.conn, 4))
+	for i := 0; i < int(numOfDocuments); i++ {
+		recv_all(c.conn, 8)
+	}
+
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", numOfDocuments)
+	c.conn.Close()
 }
