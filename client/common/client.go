@@ -1,12 +1,12 @@
 package common
 
 import (
-	"bufio"
 	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -78,7 +78,7 @@ const MAX_SURNAME_LENGTH = 10
 const MAX_SIZE_PERSON = 1 + MAX_NAME_LENGTH + 1 + MAX_SURNAME_LENGTH + 8 + 10 + 8
 
 func (c *Client) sendPerson(persona Person) error {
-	buf := make([]byte, 0, MAX_SIZE_PERSON)
+	buf := make([]byte, 0, 1)
 
 	nameLength := len(persona.nombre)
 	if nameLength > MAX_NAME_LENGTH {
@@ -102,36 +102,69 @@ func (c *Client) sendPerson(persona Person) error {
 	binary.BigEndian.PutUint64(number, persona.numero)
 	buf = append(buf, number...)
 
-	_, err := c.conn.Write(buf)
-	return err
+	return send_all(c.conn, buf)
+}
+
+func send_all(sock net.Conn, buf []byte) error {
+	totalWritten := 0
+	for totalWritten < len(buf) {
+		size, err := sock.Write(buf[totalWritten:])
+		if err != nil {
+			return fmt.Errorf("failed to write data: %w. Trying again.", err)
+		}
+		totalWritten += size
+	}
+	return nil
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop() {
 	// There is an autoincremental msgID to identify every message sent
 	// Messages if the message amount threshold has not been surpassed
+	retries := 0
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
 		// Create the connection the server in every loop iteration. Send an
-		c.createClientSocket()
-
-		// TODO: Modify the send to avoid short-write
-		persona := Person {
-			nombre:     "Santiago Lionel",
-			apellido:   "Lorca",
-			dni:        "30904465",
-			nacimiento: "1999-03-17",
-			numero:     7574,
+		err := c.createClientSocket()
+		if c.conn == nil || err != nil {
+			if retries < 5 {
+				retries++
+				time.Sleep(c.config.LoopPeriod)
+				continue
+			}
+			os.Exit(1)
+			return
 		}
 
-		err := c.sendPerson(persona)
+		persona := Person {
+			nombre:     os.Getenv("NOMBRE") ,
+			apellido:   os.Getenv("APELLIDO"),
+			dni:        os.Getenv("DNI"),
+			nacimiento: os.Getenv("NACIMIENTO"),
+		}
+		i := os.Getenv("NUMERO")
+		v, err := strconv.ParseUint(i, 10, 64)
 		if err != nil {
-			fmt.Println("error sending person", err)
+			persona.numero = 7777
+		} else {
+			persona.numero = v
+		}
+
+		err = c.sendPerson(persona)
+		if err != nil {
 			return
 		}
 		log.Infof("action: apuesta_enviada | result: success | dni: %s | numero: %s", persona.dni, persona.numero)
 
-		msg, err := bufio.NewReader(c.conn).ReadString('\n')
-		c.conn.Close()
+		buffer := make([]byte, 2)
+		totalRead := 0
+		for totalRead < len(buffer) {
+			size, err := c.conn.Read(buffer)
+			log.Infof("size READ %v", size)
+			if err != nil {
+				fmt.Errorf("failed to read data: %w. Trying again.", err)
+			}
+			totalRead += size
+		}
 
 		if err != nil {
 			log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
@@ -143,12 +176,15 @@ func (c *Client) StartClientLoop() {
 
 		log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
 			c.config.ID,
-			msg,
+			string(buffer),
 		)
 
-		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
-
 	}
+
+	if c.conn != nil {
+		c.conn.Close()
+	}
+
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }

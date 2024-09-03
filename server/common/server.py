@@ -3,6 +3,30 @@ import logging
 import signal
 from .utils import store_bets, Bet
 
+def recv_all(sock: socket, length: int) -> bytes:
+    """
+    Recibe todos los bytes de un socket, manejando short reads
+    """
+    data = b''
+    while len(data) < length:
+        packet = sock.recv(length - len(data))
+        if not packet:
+            raise ConnectionError("Socket connection closed or error occurred.")
+        data += packet
+    return data
+
+def send_all(sock: socket, data: bytes) -> int:
+    """
+    Envia todos los bytes a traves de un socket, manejando short writes
+    """
+    total_sent = 0
+    while total_sent < len(data):
+        sent = sock.send(data[total_sent:])
+        if sent == 0:
+            raise ConnectionError("Socket connection closed or error occurred.")
+        total_sent += sent
+    return total_sent
+
 class Person:
     def __init__(self, nombre, apellido, dni, nacimiento, numero):
         self.nombre = nombre
@@ -12,15 +36,15 @@ class Person:
         self.numero = numero
 
     def from_socket(sock: socket.socket):
-        nombre_len = int.from_bytes(sock.recv(1), byteorder='big')
-        nombre = sock.recv(nombre_len).decode('utf-8')
+        nombre_len = int.from_bytes(recv_all(sock, 1), byteorder='big')
+        nombre = recv_all(sock, nombre_len).decode('utf-8')
 
-        apellido_len = int.from_bytes(sock.recv(1), byteorder='big')
-        apellido = sock.recv(apellido_len).decode('utf-8')
+        apellido_len = int.from_bytes(recv_all(sock, 1), byteorder='big')
+        apellido = recv_all(sock, apellido_len).decode('utf-8')
 
-        dni = sock.recv(8).decode('utf-8')
-        nacimiento = sock.recv(10).decode('utf-8')
-        numero = int.from_bytes(sock.recv(8), byteorder='big')
+        dni = recv_all(sock, 8).decode('utf-8')
+        nacimiento = recv_all(sock, 10).decode('utf-8')
+        numero = int.from_bytes(recv_all(sock, 8), byteorder='big')
 
         return Person(nombre, apellido, dni, nacimiento, numero)
 
@@ -35,9 +59,7 @@ class Server:
         signal.signal(signal.SIGTERM, self.shutdown)
 
     def shutdown(self, *_, **__):
-        # logging.info(f'action: shutdown | result: success')
-        self.shutdown = True
-        # self._server_socket.close()
+        self.kill = True
 
     def run(self):
         """
@@ -52,10 +74,9 @@ class Server:
             if self.kill:
                 break
             client_sock = self.__accept_new_connection()
-            if self.kill:
-                break
             self.__handle_client_connection(client_sock)
 
+        logging.info("action: exit | result: success")
         self._server_socket.close()
 
     def __handle_client_connection(self, client_sock):
@@ -66,17 +87,15 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
             person = Person.from_socket(client_sock)
 
             logging.info(f'action: apuesta_almacenada | result: success | dni: {person.dni} | numero: {person.numero}')
 
-            store_bets([Bet(0, person.nombre, person.apellido, person.dni, person.nacimiento, person.numero)])
+            store_bets([Bet(1, person.nombre, person.apellido, person.dni, person.nacimiento, person.numero)])
 
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format("OK").encode('utf-8'))
+            send_all(client_sock, b"OK")
         except OSError as e:
-            logging.error("action: receive_message | result: fail | error: {e}")
+            logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
             client_sock.close()
 
