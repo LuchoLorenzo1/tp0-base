@@ -3,7 +3,7 @@
 SERVER_CONTAINER_NAME="server"
 NETWORK_NAME="tp0_testing_net"
 
-SERVER_PORT=9999
+SERVER_PORT=12345
 MESSAGE="message"
 
 RESPONSE=$(docker run --rm --network $NETWORK_NAME busybox sh -c "echo $MESSAGE | nc $SERVER_CONTAINER_NAME $SERVER_PORT")
