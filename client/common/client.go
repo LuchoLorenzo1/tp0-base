@@ -192,18 +192,37 @@ func (c *Client) _StartClientLoop() {
 		return
 	}
 
-	c.createClientSocket()
-	send_all(c.conn, []byte{GET_WINNERS})
-	if err != nil {
-		fmt.Errorf("error mode message", err)
-		return
-	}
-	err = send_agency_number(c.conn, agencia)
-	if err != nil {
-		fmt.Println("error sending agency number", err)
-		return
-	}
+	a := true
+	for a {
+		c.createClientSocket()
+		if c.conn == nil {
+			time.Sleep(c.config.LoopPeriod)
+			continue
+		}
 
+		send_all(c.conn, []byte{GET_WINNERS})
+		if err != nil {
+			fmt.Errorf("error mode message", err)
+			return
+		}
+		err = send_agency_number(c.conn, agencia)
+		if err != nil {
+			fmt.Println("error sending agency number", err)
+			return
+		}
+
+		buffer = recv_all(c.conn, 2)
+		response = string(buffer)
+
+		if response != "OK" {
+			c.conn.Close()
+			time.Sleep(c.config.LoopPeriod)
+			continue
+		} else {
+			a = false
+		}
+	} 
+	
 	numOfDocuments := binary.BigEndian.Uint32(recv_all(c.conn, 4))
 	for i := 0; i < int(numOfDocuments); i++ {
 		recv_all(c.conn, 8)

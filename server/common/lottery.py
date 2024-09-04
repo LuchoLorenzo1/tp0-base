@@ -1,6 +1,7 @@
 from .utils import store_bets, Bet, recv_all, send_all, load_bets, has_won
 import socket
 import logging
+import os
 
 class LotteryProtocol:
 
@@ -30,7 +31,7 @@ class LotteryProtocol:
         logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
         send_all(sock, b"OK")
 
-    def get_winner(sock, agencia):
+    def send_winner(sock, agencia):
         winners_from_agency: list[Bet] = []
         for b in list(load_bets()):
             if has_won(b) and b.agency == agencia:
@@ -39,7 +40,7 @@ class LotteryProtocol:
         for winner in winners_from_agency:
             send_all(sock, winner.document.encode('utf-8'))
 
-    def start(sock: socket.socket) -> list[Bet]:
+    def start(sock: socket.socket, state: dict) -> list[Bet]:
         try:
             mode = int.from_bytes(sock.recv(1), byteorder='big')
             agencia = int.from_bytes(sock.recv(4), byteorder='big')
@@ -48,10 +49,20 @@ class LotteryProtocol:
                 LotteryProtocol.get_bets(sock, agencia)
             elif mode == LotteryProtocol.END_BETS:
                 logging.info(f"action: notificacion_recibida_fin_apuestas | result: success")
+
+                agencias_listas = state.get("agencias_listas", set())
+                agencias_listas.add(agencia)
+                state["agencias_listas"] = agencias_listas
+                if len(agencias_listas) == (int(os.getenv("AGENCIAS")) or 5):
+                    state["ready"] = True
+
                 send_all(sock, b"OK")
             elif mode == LotteryProtocol.GET_WINNERS:
-                LotteryProtocol.get_winner(sock, agencia)
-
+                if not state.get("ready", False):
+                    send_all(sock, b"NO")
+                    return
+                send_all(sock, b"OK")
+                LotteryProtocol.send_winner(sock, agencia)
         except Exception as e:
             logging.error(f"action: apuesta_recibida | result: fail | error: {e}")
             return None

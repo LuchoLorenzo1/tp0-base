@@ -15,6 +15,12 @@ if ! [[ $2 =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+if [ $2 -gt 5 ]; then
+	y=5
+else
+	y=$2
+fi
+
 file="name: tp0
 services:
   server:
@@ -23,7 +29,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
-      - LOGGING_LEVEL=DEBUG
+      - AGENCIAS=${y}
     networks:
       - testing_net
     volumes:
@@ -43,7 +49,6 @@ do
       - CLI_ID=$i
       - AGENCY_FILE=/agency.csv
       - AGENCY_NUMBER=$x
-      - CLI_LOG_LEVEL=DEBUG
     networks:
       - testing_net
     depends_on:

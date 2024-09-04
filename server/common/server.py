@@ -42,7 +42,7 @@ class Server:
         client socket will also be closed
         """
         try:
-            LotteryProtocol.start(client_sock)
+            LotteryProtocol.start(client_sock, self.state)
         except OSError as e:
             logging.error(f"action: receive_message | result: fail | error: {e}")
         finally:
