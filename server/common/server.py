@@ -2,6 +2,7 @@ import socket
 import logging
 import signal
 from .lottery import LotteryProtocol
+import concurrent.futures
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -25,11 +26,12 @@ class Server:
         finishes, servers starts to accept new connections again
         """
 
-        while True:
-            if self.kill:
-                break
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        with concurrent.futures.ThreadPoolExecutor(5) as executor:
+            while True:
+                if self.kill:
+                    break
+                client_sock = self.__accept_new_connection()
+                executor.submit(self.__handle_client_connection, client_sock)
 
         logging.info(f'action: shutdown | result: success')
         self._server_socket.close()
