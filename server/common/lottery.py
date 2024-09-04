@@ -61,6 +61,11 @@ class LotteryProtocol:
                 if not state.get("ready", False):
                     send_all(sock, b"NO")
                     return
+                agencias_listas: set = state.get("agencias_listas", set())
+                agencias_listas.remove(agencia)
+                state["agencias_listas"] = agencias_listas
+                if len(agencias_listas) == 0:
+                    state["ready"] = False
                 send_all(sock, b"OK")
                 LotteryProtocol.send_winner(sock, agencia)
         except Exception as e:

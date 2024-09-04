@@ -6,7 +6,7 @@ services:
     entrypoint: python3 /main.py
     environment:
       - PYTHONUNBUFFERED=1
-      - AGENCIAS=5
+      - AGENCIAS=1
     networks:
       - testing_net
     volumes:
@@ -27,74 +27,6 @@ services:
     volumes:
       - ./client/config.yaml:/config.yaml
       - ./.data/agency-1.csv:/agency.csv
-
-
-  client2:
-    container_name: client2
-    image: client:latest
-    entrypoint: /client
-    environment:
-      - CLI_ID=2
-      - AGENCY_FILE=/agency.csv
-      - AGENCY_NUMBER=2
-    networks:
-      - testing_net
-    depends_on:
-      - server
-    volumes:
-      - ./client/config.yaml:/config.yaml
-      - ./.data/agency-2.csv:/agency.csv
-
-
-  client3:
-    container_name: client3
-    image: client:latest
-    entrypoint: /client
-    environment:
-      - CLI_ID=3
-      - AGENCY_FILE=/agency.csv
-      - AGENCY_NUMBER=3
-    networks:
-      - testing_net
-    depends_on:
-      - server
-    volumes:
-      - ./client/config.yaml:/config.yaml
-      - ./.data/agency-3.csv:/agency.csv
-
-
-  client4:
-    container_name: client4
-    image: client:latest
-    entrypoint: /client
-    environment:
-      - CLI_ID=4
-      - AGENCY_FILE=/agency.csv
-      - AGENCY_NUMBER=4
-    networks:
-      - testing_net
-    depends_on:
-      - server
-    volumes:
-      - ./client/config.yaml:/config.yaml
-      - ./.data/agency-4.csv:/agency.csv
-
-
-  client5:
-    container_name: client5
-    image: client:latest
-    entrypoint: /client
-    environment:
-      - CLI_ID=5
-      - AGENCY_FILE=/agency.csv
-      - AGENCY_NUMBER=5
-    networks:
-      - testing_net
-    depends_on:
-      - server
-    volumes:
-      - ./client/config.yaml:/config.yaml
-      - ./.data/agency-5.csv:/agency.csv
 
 networks:
   testing_net:
