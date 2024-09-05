@@ -11,6 +11,12 @@ class LotteryProtocol:
     END_BETS=2
     GET_WINNERS=3
 
+    READY_KEY="ready"
+    AGENCIES_SET_KEY="agencias_listas"
+
+    SUCESS=b"OK"
+    ERROR=b"NO"
+
     def parse_bet(sock: socket.socket, agencia: int) -> Bet:
         nombre_len = int.from_bytes(recv_all(sock, 1), byteorder='big')
         nombre = recv_all(sock, nombre_len).decode('utf-8')
@@ -34,21 +40,25 @@ class LotteryProtocol:
             store_bets(bets)
 
         logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
-        send_all(sock, b"OK")
+        send_all(sock, LotteryProtocol.SUCESS)
 
     def send_winner(sock: socket.socket, agencia: int, state: dict, state_lock: threading.Lock):
 
+        ready = False
         with state_lock:
-            if not state.get("ready", False):
-                send_all(sock, b"NO")
-                return
-            agencias_listas: set = state.get("agencias_listas", set())
-            agencias_listas.remove(agencia)
-            state["agencias_listas"] = agencias_listas
-            if len(agencias_listas) == 0:
-                state["ready"] = False
+            ready = state.get(LotteryProtocol.READY_KEY, False)
+            if ready:
+                agencias_listas: set = state.get(LotteryProtocol.AGENCIES_SET_KEY, set())
+                agencias_listas.remove(agencia)
+                state[LotteryProtocol.AGENCIES_SET_KEY] = agencias_listas
+                if len(agencias_listas) == 0:
+                    state[LotteryProtocol.READY_KEY] = False
 
-        send_all(sock, b"OK")
+        if not ready:
+            send_all(sock, LotteryProtocol.ERROR)
+            return
+        else:
+            send_all(sock, LotteryProtocol.SUCESS)
 
         winners_from_agency: list[Bet] = []
         for b in list(load_bets()):
@@ -62,13 +72,13 @@ class LotteryProtocol:
         logging.info(f"action: notificacion_recibida_fin_apuestas | result: success")
 
         with state_lock:
-            agencias_listas = state.get("agencias_listas", set())
+            agencias_listas = state.get(LotteryProtocol.AGENCIES_SET_KEY, set())
             agencias_listas.add(agencia)
-            state["agencias_listas"] = agencias_listas
+            state[LotteryProtocol.AGENCIES_SET_KEY] = agencias_listas
             if len(agencias_listas) == int(os.getenv("AGENCIAS", 5)):
-                state["ready"] = True
+                state[LotteryProtocol.READY_KEY] = True
 
-        send_all(sock, b"OK")
+        send_all(sock, LotteryProtocol.SUCESS)
 
     def start(sock: socket.socket, state: dict, state_lock: threading.Lock, bets_lock: threading.Lock):
         try:
