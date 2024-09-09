@@ -2,9 +2,8 @@ package common
 
 import (
 	"fmt"
-	"encoding/csv"
-	"os"
 	"net"
+	"encoding/binary"
 )
 
 // Send all data in the buffer to the socket, preventing short writes
@@ -20,18 +19,21 @@ func send_all(sock net.Conn, buf []byte) error {
 	return nil
 }
 
-// Read a CSV file and return its content as a 2D array of strings
-func readCsvFile(filePath string) ([][]string, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
+func recv_all(sock net.Conn, sz int) ([]byte, error) {
+	buffer := make([]byte, sz)
+	totalRead := 0
+	for totalRead < len(buffer) {
+		size, err := sock.Read(buffer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read data: %w. Trying again.", err)
+		}
+		totalRead += size
 	}
-	defer f.Close()
+	return buffer, nil
+}
 
-	csvReader := csv.NewReader(f)
-	records, err := csvReader.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-	return records, nil
+func send_agency_number(sock net.Conn, agencia uint32) error {
+	numberOfBatchesBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(numberOfBatchesBytes, agencia)
+	return send_all(sock, numberOfBatchesBytes)
 }

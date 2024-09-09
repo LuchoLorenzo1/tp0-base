@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"encoding/csv"
 
 	"github.com/op/go-logging"
 )
@@ -29,6 +30,8 @@ type ClientConfig struct {
 type Client struct {
 	config ClientConfig
 	conn   net.Conn
+	reader *csv.Reader
+	file   *os.File	
 }
 
 // NewClient Initializes a new client receiving the configuration
@@ -44,6 +47,9 @@ func NewClient(config ClientConfig) *Client {
 		<-sigc
 		if client.conn != nil {
 			client.conn.Close()
+		}
+		if client.file != nil {
+			client.file.Close()
 		}
 		os.Exit(0)
 	}()
@@ -91,37 +97,35 @@ const END_BETS=2
 const GET_WINNERS=3
 
 
+
+// Read a CSV file and return its content as a 2D array of strings
+func (c *Client) openCsvReader(filePath string) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+
+	c.file = f
+	c.reader = csv.NewReader(f)
+	return nil
+}
+
 func (c *Client) StartClientLoop() {
 	c._StartClientLoop()
+
 	if c.conn != nil {
 		c.conn.Close()
 	}
-}
-
-func recv_all(sock net.Conn, sz int) ([]byte, error) {
-	buffer := make([]byte, sz)
-	totalRead := 0
-	for totalRead < len(buffer) {
-		size, err := sock.Read(buffer)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read data: %w. Trying again.", err)
-		}
-		totalRead += size
+	if c.file != nil {
+		c.file.Close()
 	}
-	return buffer, nil
-}
-
-func send_agency_number(sock net.Conn, agencia uint32) error {
-	numberOfBatchesBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(numberOfBatchesBytes, agencia)
-	return send_all(sock, numberOfBatchesBytes)
 }
 
 func (c *Client) _StartClientLoop() {
 	agencia := uint32(c.config.AgencyNumber)
-	records, err := readCsvFile(c.config.AgencyFile)
-	if err != nil {
-		fmt.Errorf("error reading csv file", err)
+	err := c.openCsvReader(c.config.AgencyFile)
+	if err != nil || c.reader == nil {
+		log.Errorf("error opening csv file", err)
 		return
 	}
 
@@ -131,7 +135,8 @@ func (c *Client) _StartClientLoop() {
 		c.config.BatchMaxAmount = 8000 / MAX_SIZE_PERSON
 	}
 
-	for i < len(records) {
+	coninue := true
+	for coninue {
 		c.createClientSocket()
 		if c.conn == nil {
 			log.Errorf("error creating client socket")
@@ -151,14 +156,28 @@ func (c *Client) _StartClientLoop() {
 		}
 
 		chunkPersonas := make([]*Person, 0, c.config.BatchMaxAmount)
-		for len(chunkPersonas) < c.config.BatchMaxAmount && i < len(records) {
-			persona, err := person_from_string_array(records[i])
+		for len(chunkPersonas) < c.config.BatchMaxAmount {
+			record, err := c.reader.Read()
+			if err != nil {
+				if err.Error() == "EOF" {
+					coninue = false
+					break
+				} 
+				log.Errorf("error reading csv file", err)
+				return
+			}
+
+			persona, err := person_from_string_array(record)
 			if err != nil {
 				fmt.Println("error creating person", err)
 				return
 			}
 			chunkPersonas = append(chunkPersonas, persona)
 			i++
+		}
+
+		if len(chunkPersonas) == 0 {
+			break
 		}
 
 		buffer := make([]byte, 4)
